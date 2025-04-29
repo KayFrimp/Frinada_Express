@@ -2,12 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticateToken, authorizeRole } = require('../middleware/auth');
+const User = require('../models/User');
+const Rider = require('../models/Rider');
 
 // Get all riders (admin only)
 router.get('/', authenticateToken, authorizeRole(['admin']), async (req, res) => {
   try {
     const [riders] = await pool.query(
-      'SELECT id, username, email, status, current_location FROM users WHERE role = ?',
+      'SELECT id, first_name, last_name, email, phone, status FROM users WHERE role = ?',
       ['rider']
     );
     res.json(riders);
@@ -21,7 +23,7 @@ router.get('/', authenticateToken, authorizeRole(['admin']), async (req, res) =>
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const [rider] = await pool.query(
-      'SELECT id, username, email, status, current_location FROM users WHERE id = ? AND role = ?',
+      'SELECT id, first_name, last_name, email, phone, status FROM users WHERE id = ? AND role = ?',
       [req.params.id, 'rider']
     );
 
@@ -36,19 +38,38 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Update rider status
-router.put('/:id/status', authenticateToken, authorizeRole(['admin', 'rider']), async (req, res) => {
+// Get rider's current orders
+router.get('/:id/orders', authenticateToken, async (req, res) => {
   try {
-    const { status } = req.body;
-    const [result] = await pool.query(
-      'UPDATE users SET status = ? WHERE id = ? AND role = ?',
-      [status, req.params.id, 'rider']
+    const [orders] = await pool.query(
+      `SELECT o.*, 
+        CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+        CONCAT(r.first_name, ' ', r.last_name) as rider_name
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
+      LEFT JOIN users r ON o.rider_id = r.id
+      WHERE o.rider_id = ? AND o.status IN ('pending', 'assigned', 'picked_up')`,
+      [req.params.id]
     );
 
-    if (result.affectedRows === 0) {
+    res.json(orders);
+  } catch (error) {
+    console.error('Error fetching rider orders:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update rider status
+router.patch('/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { is_available } = req.body;
+    const rider = await Rider.findByUserId(req.params.id);
+
+    if (!rider) {
       return res.status(404).json({ message: 'Rider not found' });
     }
 
+    await rider.update({ is_available });
     res.json({ message: 'Rider status updated successfully' });
   } catch (error) {
     console.error('Error updating rider status:', error);
@@ -57,38 +78,19 @@ router.put('/:id/status', authenticateToken, authorizeRole(['admin', 'rider']), 
 });
 
 // Update rider location
-router.put('/:id/location', authenticateToken, authorizeRole(['rider']), async (req, res) => {
+router.patch('/:id/location', authenticateToken, async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
-    const [result] = await pool.query(
-      'UPDATE users SET current_location = POINT(?, ?) WHERE id = ? AND role = ?',
-      [longitude, latitude, req.params.id, 'rider']
-    );
+    const rider = await Rider.findByUserId(req.params.id);
 
-    if (result.affectedRows === 0) {
+    if (!rider) {
       return res.status(404).json({ message: 'Rider not found' });
     }
 
+    await rider.updateLocation(latitude, longitude);
     res.json({ message: 'Rider location updated successfully' });
   } catch (error) {
     console.error('Error updating rider location:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Get rider's current orders
-router.get('/:id/orders', authenticateToken, authorizeRole(['admin', 'rider']), async (req, res) => {
-  try {
-    const [orders] = await pool.query(
-      `SELECT o.*, u.username as customer_name 
-       FROM orders o 
-       LEFT JOIN users u ON o.user_id = u.id 
-       WHERE o.rider_id = ? AND o.status IN ('assigned', 'picked_up', 'in_transit')`,
-      [req.params.id]
-    );
-    res.json(orders);
-  } catch (error) {
-    console.error('Error fetching rider orders:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

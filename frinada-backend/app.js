@@ -30,9 +30,9 @@ const app = express();
 // Enable CORS first
 app.use(cors());
 
-// Body parser
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parser - IMPORTANT: This must come before any routes that use req.body
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Dev logging middleware
 if (process.env.NODE_ENV === 'development') {

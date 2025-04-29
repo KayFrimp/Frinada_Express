@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { pool } = require('../config/database');
+const User = require('../models/User');
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -15,17 +15,14 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get user from database
-    const [users] = await pool.query(
-      'SELECT id, username, email, role FROM users WHERE id = ?',
-      [decoded.id]
-    );
+    const user = await User.findById(decoded.id);
 
-    if (users.length === 0) {
+    if (!user) {
       return res.status(401).json({ message: 'Invalid token. User not found.' });
     }
 
     // Add user to request object
-    req.user = users[0];
+    req.user = user;
     next();
   } catch (error) {
     console.error('Authentication error:', error);

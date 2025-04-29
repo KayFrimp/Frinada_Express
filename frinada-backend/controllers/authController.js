@@ -4,7 +4,11 @@ const jwt = require('jsonwebtoken');
 
 // Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET || 'your_jwt_secret', {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET environment variable is not set');
+  }
+  
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d'
   });
 };
@@ -15,6 +19,14 @@ const generateToken = (id) => {
 exports.register = async (req, res) => {
   try {
     const { first_name, last_name, email, phone, password, role } = req.body;
+
+    // Validate role
+    if (role && role !== 'rider' && role !== 'admin') {
+      return res.status(400).json({ 
+        message: 'Invalid role', 
+        error: 'Role must be either "rider" or "admin"' 
+      });
+    }
 
     // Check if user already exists with email
     const emailExists = await User.findByEmail(email);
@@ -35,7 +47,7 @@ exports.register = async (req, res) => {
       email,
       phone,
       password,
-      role: role || 'rider',
+      role: role || 'rider', // Default to 'rider' if not specified
       status: 'active'
     });
 
@@ -101,7 +113,7 @@ exports.login = async (req, res) => {
     const token = generateToken(user.id);
 
     // Return user data and token
-    res.status(200).json({
+    res.json({
       success: true,
       token,
       user: {
@@ -111,9 +123,9 @@ exports.login = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        status: user.status,
-        rider: riderData
-      }
+        status: user.status
+      },
+      rider: riderData
     });
   } catch (error) {
     console.error('Login error:', error);

@@ -3,15 +3,18 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const { authenticateToken, authorizeRole } = require('../middleware/auth');
 
-// Get all orders (admin and rider)
-router.get('/', authenticateToken, authorizeRole(['admin', 'rider']), async (req, res) => {
+// Get all orders (admin only)
+router.get('/', authenticateToken, authorizeRole(['admin']), async (req, res) => {
   try {
-    const [orders] = await pool.query(`
-      SELECT o.*, u.username as customer_name, r.username as rider_name 
-      FROM orders o 
-      LEFT JOIN users u ON o.user_id = u.id 
+    const [orders] = await pool.query(
+      `SELECT o.*, 
+        CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+        CONCAT(r.first_name, ' ', r.last_name) as rider_name
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
       LEFT JOIN users r ON o.rider_id = r.id
-    `);
+      ORDER BY o.created_at DESC`
+    );
     res.json(orders);
   } catch (error) {
     console.error('Error fetching orders:', error);
@@ -22,20 +25,22 @@ router.get('/', authenticateToken, authorizeRole(['admin', 'rider']), async (req
 // Get order by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    const [order] = await pool.query(
-      `SELECT o.*, u.username as customer_name, r.username as rider_name 
-       FROM orders o 
-       LEFT JOIN users u ON o.user_id = u.id 
-       LEFT JOIN users r ON o.rider_id = r.id 
-       WHERE o.id = ?`,
+    const [orders] = await pool.query(
+      `SELECT o.*, 
+        CONCAT(u.first_name, ' ', u.last_name) as customer_name,
+        CONCAT(r.first_name, ' ', r.last_name) as rider_name
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
+      LEFT JOIN users r ON o.rider_id = r.id
+      WHERE o.id = ?`,
       [req.params.id]
     );
 
-    if (order.length === 0) {
+    if (orders.length === 0) {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    res.json(order[0]);
+    res.json(orders[0]);
   } catch (error) {
     console.error('Error fetching order:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -43,18 +48,50 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // Create new order
-router.post('/', authenticateToken, authorizeRole(['customer']), async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { user_id, items, total_amount, delivery_address } = req.body;
+    const { 
+      pickup_address,
+      delivery_address,
+      pickup_latitude,
+      pickup_longitude,
+      delivery_latitude,
+      delivery_longitude,
+      items,
+      total_amount
+    } = req.body;
+
     const [result] = await pool.query(
-      'INSERT INTO orders (user_id, items, total_amount, delivery_address, status) VALUES (?, ?, ?, ?, ?)',
-      [user_id, JSON.stringify(items), total_amount, delivery_address, 'pending']
+      `INSERT INTO orders (
+        user_id, pickup_address, delivery_address,
+        pickup_latitude, pickup_longitude,
+        delivery_latitude, delivery_longitude,
+        items, total_amount, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.user.id,
+        pickup_address,
+        delivery_address,
+        pickup_latitude,
+        pickup_longitude,
+        delivery_latitude,
+        delivery_longitude,
+        JSON.stringify(items),
+        total_amount,
+        'pending'
+      ]
     );
 
-    res.status(201).json({
-      message: 'Order created successfully',
-      orderId: result.insertId
-    });
+    const [order] = await pool.query(
+      `SELECT o.*, 
+        CONCAT(u.first_name, ' ', u.last_name) as customer_name
+      FROM orders o
+      LEFT JOIN users u ON o.user_id = u.id
+      WHERE o.id = ?`,
+      [result.insertId]
+    );
+
+    res.status(201).json(order[0]);
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -62,7 +99,7 @@ router.post('/', authenticateToken, authorizeRole(['customer']), async (req, res
 });
 
 // Update order status
-router.put('/:id/status', authenticateToken, authorizeRole(['admin', 'rider']), async (req, res) => {
+router.patch('/:id/status', authenticateToken, async (req, res) => {
   try {
     const { status } = req.body;
     const [result] = await pool.query(
@@ -82,7 +119,7 @@ router.put('/:id/status', authenticateToken, authorizeRole(['admin', 'rider']), 
 });
 
 // Assign rider to order
-router.put('/:id/assign-rider', authenticateToken, authorizeRole(['admin']), async (req, res) => {
+router.patch('/:id/assign', authenticateToken, authorizeRole(['admin']), async (req, res) => {
   try {
     const { rider_id } = req.body;
     const [result] = await pool.query(
