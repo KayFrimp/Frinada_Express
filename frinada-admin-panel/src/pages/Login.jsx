@@ -176,6 +176,14 @@ const Login = () => {
           >
             {isLoading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : 'Sign In'}
           </Button>
+          <Box sx={{ textAlign: 'center', mt: 2 }}>
+            <Typography variant="body2">
+              Don't have an account?{' '}
+              <a href="/register" style={{ color: '#02830A', textDecoration: 'underline', fontWeight: 600 }}>
+                Register
+              </a>
+            </Typography>
+          </Box>
         </Box>
       </Paper>
     </Box>
