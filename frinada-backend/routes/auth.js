@@ -211,4 +211,11 @@ router.get('/me', async (req, res) => {
   }
 });
 
+// Logout user (stateless JWT standard approach)
+router.post('/logout', (req, res) => {
+  // For JWT, logout is handled on the client by deleting the token.
+  // This endpoint exists for frontend compatibility and always returns success.
+  res.json({ message: 'Logout successful' });
+});
+
 module.exports = router; 
